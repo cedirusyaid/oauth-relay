@@ -23,6 +23,9 @@ $allowedHosts = [
     'cepad.tailb17b07.ts.net',
     '100.122.111.21',
     'apps.sinjaikab.go.id',
+    'e-praja.sinjaikab.go.id',
+    'enikda.sinjaikab.go.id',
+    'e-pad.sinjaikab.go.id',
     // Tambahkan host lain sesuai kebutuhan...
 ];
 
