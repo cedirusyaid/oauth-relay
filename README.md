@@ -115,35 +115,51 @@ writable/logs/oauth-relay-YYYY-MM.log
 
 ---
 
-## 🛠️ Integrasi di Aplikasi
+## 🛠️ Integrasi di Aplikasi (Menggunakan `GoogleOAuthClient.php`)
 
-### Yang dibutuhkan di setiap app:
+Telah disediakan helper class [GoogleOAuthClient.php](GoogleOAuthClient.php) agar aplikasi PHP dapat terintegrasi dengan sangat mudah.
 
-1. **Saat user klik Login Google**, redirect ke Google OAuth:
-   ```
-   https://accounts.google.com/o/oauth2/v2/auth?
-     client_id=CLIENT_ID&
-     redirect_uri=https://DOMAIN-PUBLIK.com/oauth-relay/&
-     response_type=code&
-     scope=openid email profile&
-     state=BASE64_JSON_STATE&
-     prompt=select_account
-   ```
-
-2. **Di controller callback** (`/auth/google/callback`):
-   - Terima `code` dan `csrf_token` dari query string
-   - Verifikasi CSRF token dengan session
-   - Tukar `code` ke access token via Google Token API
-   - Ambil user info via Google UserInfo API
-   - Proses login/register
-
-### Contoh state encoding (PHP):
+### 1. Menampilkan Tombol Login (`login.php` / View App)
 ```php
-$state = base64_encode(json_encode([
-    'return_url' => base_url('auth/google/callback'),
-    'csrf_token' => bin2hex(random_bytes(16)),
-    'app_name'   => 'Nama Aplikasi',
-]));
+require_once '/var/www/html/oauth-relay/GoogleOAuthClient.php';
+
+// Inisialisasi helper (Nama Aplikasi, Client ID, Client Secret)
+$oauth = new GoogleOAuthClient('E-PRAJA', 'CLIENT_ID_ANDA', 'CLIENT_SECRET_ANDA');
+
+// URL callback lokal aplikasi tempat menerima login
+$returnUrl = 'http://cepad/e-praja/auth/google/callback';
+$loginUrl  = $oauth->getLoginUrl($returnUrl);
+?>
+
+<a href="<?= htmlspecialchars($loginUrl) ?>">Login dengan Google</a>
+```
+
+### 2. Menangani Respon Callback (`callback.php` / Controller App)
+```php
+require_once '/var/www/html/oauth-relay/GoogleOAuthClient.php';
+
+$oauth = new GoogleOAuthClient('E-PRAJA', 'CLIENT_ID_ANDA', 'CLIENT_SECRET_ANDA');
+
+try {
+    // Ambil profil pengguna dari Google (otomatis verifikasi CSRF & tukar token)
+    $user = $oauth->handleCallback();
+
+    if ($user) {
+        $email = $user['email'];
+        $nama  = $user['name'];
+        $foto  = $user['picture'];
+        $sub   = $user['sub']; // ID unik Google
+
+        // Lakukan login session pada aplikasi Anda
+        $_SESSION['user_email'] = $email;
+        $_SESSION['user_name']  = $nama;
+
+        header('Location: /e-praja/dashboard');
+        exit;
+    }
+} catch (Exception $e) {
+    die('Gagal Login Google: ' . $e->getMessage());
+}
 ```
 
 ---
@@ -152,11 +168,13 @@ $state = base64_encode(json_encode([
 
 ```
 oauth-relay/
-├── index.php       ← Script relay utama
-├── README.md       ← Dokumentasi ini
+├── index.php               ← Script relay utama di server publik
+├── GoogleOAuthClient.php   ← Helper class untuk dipakai oleh aplikasi
+├── push.sh                 ← Script auto-commit & push standar Sinjai v2.6
+├── README.md               ← Dokumentasi ini
 └── writable/
-    └── logs/       ← Log file (auto-created)
-        └── oauth-relay-2026-08.log
+    └── logs/               ← Log file (auto-created)
+        └── oauth-relay-YYYY-MM.log
 ```
 
 ---
@@ -185,10 +203,11 @@ oauth-relay/
               └───────────┘ └──────────┘ └───────────┘
 ```
 
-Semua app pakai **1 Client ID** dan **1 relay** yang sama. Cukup tambahkan hostname baru ke `$allowedHosts` jika ada server/app baru.
+Semua app pakai **1 Client ID** dan **1 relay** yang sama. Cukup tambahkan hostname baru ke `$allowedHosts` di `index.php` jika ada server/app baru.
 
 ---
 
 ## 📝 Lisensi
 
 Internal Diskominfo Sinjai — Muhammad Rusyaid, S.Kom., M.Si.
+
