@@ -177,6 +177,24 @@ try {
 
 ---
 
+## 🚀 Migrasi Database (`oauth_db`)
+
+Untuk memasang atau menginisialisasi database `oauth_db` pada server baru, telah disediakan 2 cara migrasi:
+
+### Cara 1: Otonom via Script PHP CLI / Browser
+Jalankan command berikut di terminal server:
+```bash
+php migrate.php
+```
+Atau buka via browser: `http://cepad/oauth-relay/migrate.php`
+
+### Cara 2: Import Manual File SQL (`schema.sql`)
+```bash
+mysql -u root -p < schema.sql
+```
+
+---
+
 ## 📁 Struktur File
 
 ```
@@ -184,7 +202,11 @@ oauth-relay/
 ├── index.php               ← Script relay utama di server publik
 ├── db.php                  ← Helper DB & koneksi oauth_db
 ├── dashboard.php           ← Dashboard Admin & Monitoring statistik Native PHP
+├── help.php                ← Halaman manual & panduan integrasi OAuth
+├── schema.sql              ← Schema SQL migrasi database & seed data
+├── migrate.php             ← Script eksekusi migrasi database otomatis
 ├── GoogleOAuthClient.php   ← Helper class untuk dipakai oleh aplikasi
+├── config.example.php      ← Template file konfigurasi kredensial
 ├── push.sh                 ← Script auto-commit & push standar Sinjai v2.6
 ├── README.md               ← Dokumentasi ini
 └── writable/
