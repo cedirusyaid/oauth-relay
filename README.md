@@ -64,38 +64,51 @@ Aplikasi mengirim `state` dalam format **base64-encoded JSON**:
 
 ---
 
+## 🗄️ Integration Database (`oauth_db`)
+
+OAuth Relay terhubung ke database `oauth_db` untuk manajemen terpusat:
+
+### 1. `allowed_hosts` (Whitelist Host Target)
+Host yang diizinkan melakukan redirect. Disimpan di DB dengan fallback array jika DB down.
+```sql
+SELECT * FROM oauth_db.allowed_hosts WHERE is_active = 1;
+```
+
+### 2. `allowed_users` (Whitelist User / Email)
+Membatasi user mana saja yang boleh login Google:
+- Jika tabel ini **kosong** (0 entri active), semua user ber-email Google diizinkan.
+- Jika tabel ini **diisi**, hanya email yang terdaftar di `allowed_users` (`is_active = 1`) yang diizinkan login.
+
+Daftarkan user baru via SQL atau via helper:
+```php
+OAuthDB::registerAllowedUser('user@sinjaikab.go.id', 'Nama Pengguna', 'user');
+```
+
+### 3. `access_logs` (Pencatatan Audit Log)
+Semua aktivitas penerusan relay (`RELAY`) dan login user (`LOGIN`) dicatat ke `oauth_db.access_logs` mencakup:
+- `event_type`: `RELAY` / `LOGIN`
+- `status`: `OK` / `BLOCKED` / `USER_BLOCKED`
+- `app_name`: Nama aplikasi pengakses (misal `E-PRAJA`)
+- `user_email` & `user_name`: Email dan nama Google user
+- `return_host` & `return_url`: Host dan URL tujuan redirect
+- `ip_address` & `user_agent`: IP pengakses & browser User Agent
+- `created_at`: Timestamp transaksi
+
+---
+
 ## 🔒 Keamanan
 
 ### Whitelist Host
-Relay **hanya** meneruskan ke host yang terdaftar di array `$allowedHosts`. Host yang tidak terdaftar akan ditolak (HTTP 403).
-
-```php
-$allowedHosts = [
-    'localhost',
-    '127.0.0.1',
-    'cepad',
-    'cepad.tailb17b07.ts.net',
-    '100.122.111.21',
-    'apps.sinjaikab.go.id',
-];
-```
+Relay **hanya** meneruskan ke host yang terdaftar di `oauth_db.allowed_hosts` (atau fallback array di [db.php](db.php)). Host yang tidak terdaftar akan ditolak (HTTP 403).
 
 ### Whitelist Path
 Selain host, relay juga memvalidasi path callback. Hanya path yang mengandung pattern yang diizinkan yang akan diteruskan.
-
-```php
-$allowedPathPatterns = [
-    '/auth/google/callback',
-    '/oauth/callback',
-    '/auth/callback',
-];
-```
 
 ### CSRF Protection
 Token CSRF dikirim via `state` dan diverifikasi oleh app saat menerima callback. Relay hanya meneruskan, tidak memverifikasi — karena **hanya app yang tahu session token-nya**.
 
 ### Logging
-Semua request (berhasil maupun ditolak) dicatat di:
+Semua request dicatat ke tabel `oauth_db.access_logs` dan file log fallback:
 ```
 writable/logs/oauth-relay-YYYY-MM.log
 ```
@@ -169,6 +182,8 @@ try {
 ```
 oauth-relay/
 ├── index.php               ← Script relay utama di server publik
+├── db.php                  ← Helper DB & koneksi oauth_db
+├── dashboard.php           ← Dashboard Admin & Monitoring statistik Native PHP
 ├── GoogleOAuthClient.php   ← Helper class untuk dipakai oleh aplikasi
 ├── push.sh                 ← Script auto-commit & push standar Sinjai v2.6
 ├── README.md               ← Dokumentasi ini

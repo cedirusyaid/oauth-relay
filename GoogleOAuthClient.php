@@ -42,6 +42,10 @@ class GoogleOAuthClient
         ?string $clientSecret = null,
         ?string $relayUrl = null
     ) {
+        if (file_exists(__DIR__ . '/config.php')) {
+            require_once __DIR__ . '/config.php';
+        }
+
         $this->appName      = $appName;
         $this->clientId     = $clientId     ?? (defined('GOOGLE_CLIENT_ID')     ? GOOGLE_CLIENT_ID     : (getenv('GOOGLE_CLIENT_ID')     ?: ''));
         $this->clientSecret = $clientSecret ?? (defined('GOOGLE_CLIENT_SECRET') ? GOOGLE_CLIENT_SECRET : (getenv('GOOGLE_CLIENT_SECRET') ?: ''));
@@ -169,10 +173,27 @@ class GoogleOAuthClient
             throw new Exception('Curl Error UserInfo: ' . $userCurlErr);
         }
 
-        if ($userHttpCode !== 200) {
-            throw new Exception('Google UserInfo Error (' . $userHttpCode . '): ' . $userResponse);
+        if (file_exists(__DIR__ . '/db.php')) {
+            require_once __DIR__ . '/db.php';
         }
 
-        return json_decode($userResponse, true);
+        $userData = json_decode($userResponse, true);
+
+        if (class_exists('OAuthDB') && is_array($userData)) {
+            $email = $userData['email'] ?? null;
+            $name  = $userData['name']  ?? null;
+            $sub   = $userData['sub']   ?? null;
+            $host  = $_SERVER['HTTP_HOST'] ?? null;
+            $uri   = $_SERVER['REQUEST_URI'] ?? null;
+
+            if ($email && !OAuthDB::isUserAllowed($email)) {
+                OAuthDB::logAccess('LOGIN', 'USER_BLOCKED', $this->appName, $email, $name, $sub, $host, $uri);
+                throw new Exception('Akses Ditolak: Email (' . htmlspecialchars($email) . ') tidak terdaftar di whitelist allowed_users.');
+            }
+
+            OAuthDB::logAccess('LOGIN', 'OK', $this->appName, $email, $name, $sub, $host, $uri);
+        }
+
+        return $userData;
     }
 }

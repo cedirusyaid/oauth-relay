@@ -15,25 +15,18 @@
  * ============================================================
  */
 
-// ── WHITELIST: Host yang diizinkan sebagai tujuan redirect ───
-$allowedHosts = [
-    'localhost',
-    '127.0.0.1',
-    'cepad',
-    'cepad.tailb17b07.ts.net',
-    '100.122.111.21',
-    'apps.sinjaikab.go.id',
-    'e-praja.sinjaikab.go.id',
-    'enikda.sinjaikab.go.id',
-    'e-pad.sinjaikab.go.id',
-    // Tambahkan host lain sesuai kebutuhan...
-];
+require_once __DIR__ . '/db.php';
+
+// ── WHITELIST: Host yang diizinkan sebagai tujuan redirect (Dari Database oauth_db + Fallback)
+$allowedHosts = OAuthDB::getAllowedHosts();
 
 // ── WHITELIST: Path callback yang diizinkan (kosongkan = semua path OK)
 $allowedPathPatterns = [
     '/auth/google/callback',
     '/oauth/callback',
     '/auth/callback',
+    '/dashboard.php',
+    '/oauth-relay/dashboard.php',
 ];
 
 // ── SECURITY HEADERS ────────────────────────────────────────
@@ -128,21 +121,7 @@ exit;
 
 function logRelay($status, $appName, $host, $extra = '')
 {
-    $logDir  = __DIR__ . '/writable/logs/';
-    if (!is_dir($logDir)) {
-        @mkdir($logDir, 0755, true);
-    }
-    $logFile = $logDir . 'oauth-relay-' . date('Y-m') . '.log';
-    $line    = sprintf(
-        "[%s] %s | app=%s | host=%s | ip=%s%s\n",
-        date('Y-m-d H:i:s'),
-        $status,
-        $appName,
-        $host,
-        $_SERVER['REMOTE_ADDR'] ?? '-',
-        $extra ? " | {$extra}" : ''
-    );
-    @file_put_contents($logFile, $line, FILE_APPEND | LOCK_EX);
+    OAuthDB::logAccess('RELAY', $status, $appName, null, null, null, $host, $extra);
 }
 
 function renderPage($title, $message, $type = 'info')
