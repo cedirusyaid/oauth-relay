@@ -173,6 +173,7 @@ if ($pdo) {
     $stats['total_active_hosts'] = (int) $pdo->query("SELECT COUNT(*) FROM allowed_hosts WHERE is_active = 1")->fetchColumn();
     $stats['total_allowed_users'] = (int) $pdo->query("SELECT COUNT(*) FROM allowed_users WHERE is_active = 1")->fetchColumn();
     $stats['total_blocked'] = (int) $pdo->query("SELECT COUNT(*) FROM access_logs WHERE status LIKE '%BLOCK%'")->fetchColumn();
+    $stats['total_unique_users'] = (int) $pdo->query("SELECT COUNT(DISTINCT user_email) FROM access_logs WHERE user_email IS NOT NULL AND user_email != ''")->fetchColumn();
 
     // Hosts list
     $allHosts = $pdo->query("SELECT * FROM allowed_hosts ORDER BY id DESC")->fetchAll();
@@ -180,12 +181,36 @@ if ($pdo) {
     // Users list
     $allUsers = $pdo->query("SELECT * FROM allowed_users ORDER BY id DESC")->fetchAll();
 
-    // Filter Logs Search
-    $searchLog = trim($_GET['search'] ?? '');
+    // Statistik Email/User Identik (Grouping by User Email)
+    $identikUserStats = $pdo->query("
+        SELECT 
+            user_email, 
+            MAX(user_name) as user_name, 
+            COUNT(*) as total_logins,
+            GROUP_CONCAT(DISTINCT COALESCE(NULLIF(app_name, ''), 'Relay Proxy') SEPARATOR ', ') as apps,
+            MAX(created_at) as last_access
+        FROM access_logs 
+        WHERE user_email IS NOT NULL AND user_email != ''
+        GROUP BY user_email 
+        ORDER BY total_logins DESC 
+        LIMIT 20
+    ")->fetchAll();
+
+    // Filter Logs Search & Presence
+    $searchLog    = trim($_GET['search'] ?? '');
     $statusFilter = trim($_GET['status'] ?? '');
-    
+    $userFilter   = trim($_GET['user_filter'] ?? 'with_user'); // Default: 'with_user'!
+
     $whereClause = "WHERE 1=1";
     $params = [];
+
+    // Filter keberadaan email/user (Default: hanya tampilkan yang ada email/user)
+    if ($userFilter === 'with_user') {
+        $whereClause .= " AND (user_email IS NOT NULL AND user_email != '')";
+    } elseif ($userFilter === 'without_user') {
+        $whereClause .= " AND (user_email IS NULL OR user_email = '')";
+    }
+
     if ($searchLog) {
         $whereClause .= " AND (user_email LIKE :s OR user_name LIKE :s OR app_name LIKE :s OR return_host LIKE :s)";
         $params[':s'] = "%{$searchLog}%";
@@ -310,6 +335,19 @@ if ($pdo) {
         <div class="card card-stat shadow-sm bg-white p-3">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
+                    <div class="text-muted small fw-semibold">User Identik (Unik)</div>
+                    <h3 class="fw-bold mb-0" style="color: #6f42c1;"><?= number_format($stats['total_unique_users']) ?></h3>
+                </div>
+                <div class="stat-icon bg-opacity-10" style="background-color: rgba(111, 66, 193, 0.1); color: #6f42c1;">
+                    <i class="fa-solid fa-user-check"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card card-stat shadow-sm bg-white p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
                     <div class="text-muted small fw-semibold">Host Aktif</div>
                     <h3 class="fw-bold mb-0 text-success"><?= number_format($stats['total_active_hosts']) ?></h3>
                 </div>
@@ -319,7 +357,7 @@ if ($pdo) {
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card card-stat shadow-sm bg-white p-3">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
@@ -332,11 +370,11 @@ if ($pdo) {
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
         <div class="card card-stat shadow-sm bg-white p-3">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <div class="text-muted small fw-semibold">Percobaan Ditolak</div>
+                    <div class="text-muted small fw-semibold">Ditolak</div>
                     <h3 class="fw-bold mb-0 text-danger"><?= number_format($stats['total_blocked']) ?></h3>
                 </div>
                 <div class="stat-icon bg-danger bg-opacity-10 text-danger">
@@ -377,6 +415,11 @@ if ($pdo) {
                 </button>
             </li>
             <li class="nav-item">
+                <button class="nav-link" id="identik-tab" data-bs-toggle="tab" data-bs-target="#identik-panel">
+                    <i class="fa-solid fa-user-check me-1"></i> Statistik User Identik (<?= count($identikUserStats) ?>)
+                </button>
+            </li>
+            <li class="nav-item">
                 <button class="nav-link" id="hosts-tab" data-bs-toggle="tab" data-bs-target="#hosts-panel">
                     <i class="fa-solid fa-globe me-1"></i> Whitelist Host (<?= count($allHosts) ?>)
                 </button>
@@ -395,8 +438,15 @@ if ($pdo) {
             <!-- TAB 1: AUDIT LOGS -->
             <div class="tab-pane fade show active" id="logs-panel">
                 <form method="GET" class="row g-2 mb-3">
-                    <div class="col-md-5">
-                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari Email, Nama, Aplikasi, atau Host..." value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                    <div class="col-md-4">
+                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari Email, Nama, Aplikasi, Host..." value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+                    </div>
+                    <div class="col-md-3">
+                        <select name="user_filter" class="form-select form-select-sm">
+                            <option value="with_user" <?= ($userFilter ?? 'with_user') === 'with_user' ? 'selected' : '' ?>>👤 Hanya Ada Email/User (Default)</option>
+                            <option value="without_user" <?= ($userFilter ?? '') === 'without_user' ? 'selected' : '' ?>>🚫 Hanya Tanpa Email/User</option>
+                            <option value="all" <?= ($userFilter ?? '') === 'all' ? 'selected' : '' ?>>🌐 Semua Audit Log</option>
+                        </select>
                     </div>
                     <div class="col-md-3">
                         <select name="status" class="form-select form-select-sm">
@@ -406,10 +456,10 @@ if ($pdo) {
                             <option value="USER_BLOCKED" <?= ($_GET['status'] ?? '') === 'USER_BLOCKED' ? 'selected' : '' ?>>USER_BLOCKED (Email)</option>
                         </select>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-1">
                         <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fa-solid fa-filter me-1"></i> Filter</button>
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-1">
                         <a href="dashboard.php" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
                     </div>
                 </form>
@@ -470,7 +520,54 @@ if ($pdo) {
                 </div>
             </div>
 
-            <!-- TAB 2: WHITELIST HOST -->
+            <!-- TAB 2: STATISTIK USER IDENTIK -->
+            <div class="tab-pane fade" id="identik-panel">
+                <div class="alert alert-info py-2 small mb-3">
+                    <i class="fa-solid fa-chart-column me-1"></i> <strong>Statistik User Identik:</strong> Menampilkan peringkat dan rangkuman aktivitas berdasarkan email/pengguna unik yang pernah terotentikasi di sistem OAuth Relay Proxy.
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle small mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="text-center" style="width: 100px;">Ranking</th>
+                                <th>Email Pengguna (Identik)</th>
+                                <th>Nama Pengguna</th>
+                                <th>Total Login / Akses</th>
+                                <th>Aplikasi Diakses</th>
+                                <th>Akses Terakhir</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($identikUserStats)): ?>
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">Belum ada data statistik user identik.</td>
+                            </tr>
+                            <?php else: $rank = 1; foreach ($identikUserStats as $u): ?>
+                            <tr>
+                                <td class="fw-bold text-center">
+                                    <?php if ($rank === 1): ?>
+                                        <span class="badge bg-warning text-dark fs-6 px-2"><i class="fa-solid fa-trophy me-1"></i> #1</span>
+                                    <?php elseif ($rank === 2): ?>
+                                        <span class="badge bg-secondary text-white fs-6 px-2"><i class="fa-solid fa-medal me-1"></i> #2</span>
+                                    <?php elseif ($rank === 3): ?>
+                                        <span class="badge bg-danger text-white fs-6 px-2"><i class="fa-solid fa-award me-1"></i> #3</span>
+                                    <?php else: ?>
+                                        <span class="text-muted fw-semibold">#<?= $rank ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><strong class="text-primary fs-6"><?= htmlspecialchars($u['user_email']) ?></strong></td>
+                                <td class="fw-semibold"><?= htmlspecialchars($u['user_name'] ?: '-') ?></td>
+                                <td><span class="badge bg-primary fs-6 px-3 py-1"><?= number_format($u['total_logins']) ?> x</span></td>
+                                <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($u['apps']) ?></span></td>
+                                <td class="text-nowrap text-muted"><?= date('d M Y H:i', strtotime($u['last_access'])) ?></td>
+                            </tr>
+                            <?php $rank++; endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 3: WHITELIST HOST -->
             <div class="tab-pane fade" id="hosts-panel">
                 <div class="row g-3 mb-3">
                     <div class="col-md-5">
